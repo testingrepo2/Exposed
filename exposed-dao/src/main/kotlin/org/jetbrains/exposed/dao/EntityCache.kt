@@ -248,7 +248,7 @@ class EntityCache(private val transaction: Transaction) {
                 if (entry.id._value == null) {
                     val id = genValues[table.id]
                     entry.id._value = id._value
-                    entry.writeValues[entry.klass.table.id as Column<Any?>] = id
+                    entry.writeIdColumnValue(entry.klass.table, id)
                 }
                 genValues.fieldIndex.keys.forEach { key ->
                     entry.writeValues[key as Column<Any?>] = genValues[key]

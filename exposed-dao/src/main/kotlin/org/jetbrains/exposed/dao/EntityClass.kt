@@ -1,6 +1,7 @@
 package org.jetbrains.exposed.dao
 
 import org.jetbrains.exposed.dao.exceptions.EntityNotFoundException
+import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.sql.*
@@ -328,7 +329,10 @@ abstract class EntityClass<ID : Comparable<ID>, out T : Entity<ID>>(
      * @sample org.jetbrains.exposed.sql.tests.h2.MultiDatabaseEntityTest.crossReferencesProhibitedForEntitiesFromDifferentDB
      */
     fun count(op: Op<Boolean>? = null): Long {
-        val countExpression = table.id.count()
+        val countExpression = when (table) {
+            is CompositeIdTable<*> -> table.idColumns.first().count()
+            else -> table.id.count()
+        }
         val query = table.select(countExpression).notForUpdate()
         op?.let { query.adjustWhere { op } }
         return query.first()[countExpression]
@@ -379,7 +383,7 @@ abstract class EntityClass<ID : Comparable<ID>, out T : Entity<ID>>(
         prototype.db = TransactionManager.current().db
         prototype._readValues = ResultRow.createAndFillDefaults(dependsOnColumns)
         if (entityId._value != null) {
-            prototype.writeValues[table.id as Column<Any?>] = entityId
+            prototype.writeIdColumnValue(table, entityId)
         }
         try {
             entityCache.addNotInitializedEntityToQueue(prototype)
@@ -421,6 +425,22 @@ abstract class EntityClass<ID : Comparable<ID>, out T : Entity<ID>>(
      * @sample org.jetbrains.exposed.sql.tests.shared.entities.EntityTests.Child
      */
     infix fun <REF : Comparable<REF>> referencedOn(column: Column<REF>) = registerRefRule(column) { Reference(column, this) }
+
+    /**
+     * Registers a reference as a field of the child entity class, which returns a parent object of this `EntityClass`.
+     *
+     * The reference should have been defined by the creation of a foreign key constraint on the child table,
+     * by using `foreignKey()`.
+     *
+     * @sample org.jetbrains.exposed.sql.tests.shared.entities.CompositeIdTableEntityTest.Author
+     */
+    infix fun referencedOn(table: IdTable<*>): Reference<Comparable<Any>, ID, T> {
+        val tableFK = table.foreignKeys.firstOrNull {
+            it.target == (this.table as CompositeIdTable).idColumns
+        } ?: error("Table $table does not hold a composite foreign key constraint matching ${this.table}'s primary key.")
+        val delegate = tableFK.from.first() as Column<Comparable<Any>>
+        return registerRefRule(delegate) { Reference(delegate, this, tableFK.references) }
+    }
 
     /**
      * Registers an optional reference as a field of the child entity class, which returns a parent object of

@@ -1,5 +1,8 @@
 package org.jetbrains.exposed.sql
 
+import org.jetbrains.exposed.dao.id.CompositeIdTable
+import org.jetbrains.exposed.dao.id.EntityID
+import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.vendors.withDialect
 import java.sql.ResultSet
@@ -21,7 +24,22 @@ class ResultRow(
      *
      * @see [getOrNull] to get null in the cases an exception would be thrown
      */
-    operator fun <T> get(expression: Expression<T>): T = getInternal(expression, checkNullability = true)
+    operator fun <T> get(expression: Expression<T>): T {
+        val column = expression as? Column<*>
+        return when {
+            column?.columnType is EntityIDColumnType<*> && column.table is CompositeIdTable<*> -> getIdComponents(column.table)
+            else -> getInternal(expression, checkNullability = true)
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> getIdComponents(table: CompositeIdTable<*>): T {
+        val resultMap = table.idColumns.associateWith { column ->
+            getInternal(column, checkNullability = true)
+        }
+        val key = table.readToKey(resultMap as Map<Column<*>, Any>)
+        return EntityID(key as Comparable<Any>, table as IdTable<Comparable<Any>>) as T
+    }
 
     /**
      * Sets the value of a given expression on this row.
