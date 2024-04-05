@@ -16,6 +16,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+@SuppressWarnings("UnusedPrivateProperty")
 class CompositeIdTableEntityTest : DatabaseTestsBase() {
     // composite id has 2 columns - types Int, UUID
     object Publishers : CompositeIdTable<PubId>("publishers") {
