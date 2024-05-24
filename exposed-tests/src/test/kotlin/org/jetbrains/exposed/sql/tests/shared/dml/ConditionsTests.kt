@@ -323,7 +323,7 @@ class ConditionsTests : DatabaseTestsBase() {
     }
 
     @Test
-    fun selectAliasedComparisonResult() {
+    fun testSelectAliasedComparisonResult() {
         val table = object : IntIdTable("foo") {
             val c1 = integer("c1")
             val c2 = integer("c2").nullable()
