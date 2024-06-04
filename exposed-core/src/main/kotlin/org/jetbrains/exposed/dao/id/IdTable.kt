@@ -1,12 +1,7 @@
 package org.jetbrains.exposed.dao.id
 
-import org.jetbrains.exposed.sql.Column
-import org.jetbrains.exposed.sql.EntityIDColumnType
-import org.jetbrains.exposed.sql.Expression
-import org.jetbrains.exposed.sql.Op
+import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.wrap
-import org.jetbrains.exposed.sql.Table
-import org.jetbrains.exposed.sql.TextColumnType
 import java.util.*
 
 /** Base class representing a producer of [EntityID] instances.  */
@@ -54,8 +49,8 @@ open class CompositeIdTable(name: String = "") : IdTable<CompositeID>(name) {
 
     private fun compositeIdColumn(): Column<EntityID<CompositeID>> {
         // Column class constructors are used to ensure neither column is actually registered in the DB via Table.columns
-        val placeholder = Column<String>(this, "composite_id", TextColumnType())
-        return Column<EntityID<CompositeID>>(this, "id", EntityIDColumnType(placeholder)).apply {
+        val placeholder = Column(this, "composite_id", CompositeIdColumnType())
+        return Column(this, "id", EntityIDColumnType(placeholder)).apply {
             defaultValueFun = {
                 val defaultMap = idColumns.associateWith { column ->
                     column.defaultValueFun?.let { it() }
@@ -85,6 +80,12 @@ open class CompositeIdTable(name: String = "") : IdTable<CompositeID>(name) {
         }
         operator(column, column.wrap(otherValue))
     }
+}
+
+private class CompositeIdColumnType : ColumnType<CompositeID>() {
+    override fun sqlType(): String = ""
+
+    override fun valueFromDB(value: Any): CompositeID? = null
 }
 
 /**
