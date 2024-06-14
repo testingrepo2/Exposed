@@ -2,7 +2,6 @@
 
 package org.jetbrains.exposed.sql
 
-import org.jetbrains.exposed.dao.id.CompositeID
 import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.EntityIDFunctionProvider
@@ -310,12 +309,11 @@ interface ISqlExpressionBuilder {
 
     /** Checks if this expression is equal to some [t] value. */
     @LowPriorityInOverloadResolution
-    @Suppress("UNCHECKED_CAST")
     infix fun <T> ExpressionWithColumnType<T>.eq(t: T): Op<Boolean> = when {
         t == null -> isNull()
         (columnType as? EntityIDColumnType<*>)?.idColumn?.table is CompositeIdTable -> {
             val table = (columnType as EntityIDColumnType<*>).idColumn.table as CompositeIdTable
-            table.mapIdComparison(t as EntityID<CompositeID>, ::EqOp).compoundAnd()
+            table.mapIdComparison(t, ::EqOp)
         }
         else -> EqOp(this, wrap(t))
     }
@@ -335,15 +333,12 @@ interface ISqlExpressionBuilder {
     }
 
     /** Checks if this [EntityID] expression is equal to some [t] value. */
+    @Suppress("UNCHECKED_CAST")
     infix fun <T : Comparable<T>, E : EntityID<T>?, V : T?> ExpressionWithColumnType<E>.eq(t: V): Op<Boolean> {
         if (t == null) return isNull()
 
-        val table = (columnType as EntityIDColumnType<*>).idColumn.table
-        return if (table is CompositeIdTable) {
-            table.mapIdComparison(EntityID(t as CompositeID, table), ::EqOp).compoundAnd()
-        } else {
-            EqOp(this, wrap(EntityID(t, table as IdTable<T>)))
-        }
+        val table = (columnType as EntityIDColumnType<*>).idColumn.table as IdTable<T>
+        return table.mapIdComparison(EntityID(t, table), ::EqOp)
     }
 
     /** Checks if this [EntityID] expression is equal to some [other] expression. */
@@ -363,12 +358,11 @@ interface ISqlExpressionBuilder {
 
     /** Checks if this expression is not equal to some [other] value. */
     @LowPriorityInOverloadResolution
-    @Suppress("UNCHECKED_CAST")
     infix fun <T> ExpressionWithColumnType<T>.neq(other: T): Op<Boolean> = when {
         other == null -> isNotNull()
-        (columnType as? EntityIDColumnType<*>)?.idColumn?.table is CompositeIdTable -> {
+        (columnType as? EntityIDColumnType<*>)?.idColumn?.table is IdTable<*> -> {
             val table = (columnType as EntityIDColumnType<*>).idColumn.table as CompositeIdTable
-            table.mapIdComparison(other as EntityID<CompositeID>, ::NeqOp).compoundAnd()
+            table.mapIdComparison(other, ::NeqOp)
         }
         else -> NeqOp(this, wrap(other))
     }
@@ -380,15 +374,12 @@ interface ISqlExpressionBuilder {
     }
 
     /** Checks if this [EntityID] expression is not equal to some [t] value. */
+    @Suppress("UNCHECKED_CAST")
     infix fun <T : Comparable<T>, E : EntityID<T>?, V : T?> ExpressionWithColumnType<E>.neq(t: V): Op<Boolean> {
         if (t == null) return isNotNull()
 
-        val table = (columnType as EntityIDColumnType<*>).idColumn.table
-        return if (table is CompositeIdTable) {
-            table.mapIdComparison(EntityID(t as CompositeID, table), ::NeqOp).compoundAnd()
-        } else {
-            NeqOp(this, wrap(EntityID(t, table as IdTable<T>)))
-        }
+        val table = (columnType as EntityIDColumnType<*>).idColumn.table as IdTable<T>
+        return table.mapIdComparison(EntityID(t, table), ::NeqOp)
     }
 
     /** Checks if this [EntityID] expression is not equal to some [other] expression. */

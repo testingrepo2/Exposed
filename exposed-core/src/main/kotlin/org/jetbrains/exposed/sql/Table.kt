@@ -44,14 +44,9 @@ interface FieldSet {
             val unrolled = ArrayList<Expression<*>>(fields.size)
 
             fields.forEach {
-                when {
-                    it is CompositeColumn<*> -> unrolled.addAll(it.getRealColumns())
-                    (it as? Column<*>)?.columnType is EntityIDColumnType<*> -> {
-                        when (val table = (it as? Column<*>)?.table) {
-                            is CompositeIdTable -> unrolled.addAll(table.idColumns)
-                            else -> unrolled.add(it)
-                        }
-                    }
+                when (it) {
+                    is CompositeColumn<*> -> unrolled.addAll(it.getRealColumns())
+                    ((it as? Column<*>)?.table as? CompositeIdTable)?.id -> unrolled.addAll((it.table as CompositeIdTable).idColumns)
                     else -> unrolled.add(it)
                 }
             }
@@ -619,6 +614,7 @@ open class Table(name: String = "") : ColumnSet(), DdlAware {
         val newColumn = Column<EntityID<T>>(table, name, EntityIDColumnType(this)).also {
             it.defaultValueFun = defaultValueFun?.let { { EntityIDFunctionProvider.createEntityID(it(), table as IdTable<T>) } }
         }
+        (table as IdTable<T>).idColumns.add(newColumn)
         return replaceColumn(this, newColumn)
     }
 

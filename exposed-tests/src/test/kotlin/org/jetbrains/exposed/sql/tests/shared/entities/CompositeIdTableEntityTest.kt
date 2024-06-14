@@ -1,9 +1,7 @@
 package org.jetbrains.exposed.sql.tests.shared.entities
 
-import org.jetbrains.exposed.dao.CompositeEntity
-import org.jetbrains.exposed.dao.CompositeEntityClass
-import org.jetbrains.exposed.dao.IntEntity
-import org.jetbrains.exposed.dao.IntEntityClass
+import org.jetbrains.exposed.dao.Entity
+import org.jetbrains.exposed.dao.EntityClass
 import org.jetbrains.exposed.dao.id.CompositeID
 import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.dao.id.EntityID
@@ -16,6 +14,7 @@ import org.jetbrains.exposed.sql.tests.shared.assertEquals
 import org.jetbrains.exposed.sql.tests.shared.assertTrue
 import org.junit.Test
 import java.util.*
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 
 @Suppress("UnusedPrivateProperty")
@@ -28,8 +27,9 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
 
         override val primaryKey = PrimaryKey(pubId, isbn)
     }
-    class Publisher(id: EntityID<CompositeID>) : CompositeEntity(id) {
-        companion object : CompositeEntityClass<Publisher>(Publishers)
+
+    class Publisher(id: EntityID<CompositeID>) : Entity<CompositeID>(id) {
+        companion object : EntityClass<CompositeID, Publisher>(Publishers)
 
         var name by Publishers.name
     }
@@ -37,8 +37,8 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
     // single id has 1 column - type Int
     object Authors : IdTable<Int>("authors") {
         override val id = integer("id").autoIncrement().entityId()
-        val publisherId = integer("publisher_id")
-        val publisherIsbn = uuid("publisher_isbn")
+        val publisherId = integer("pub_id")
+        val publisherIsbn = uuid("isbn_code")
         val penName = varchar("pen_name", 32)
 
         override val primaryKey = PrimaryKey(id)
@@ -47,68 +47,25 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
             foreignKey(publisherId, publisherIsbn, target = Publishers.primaryKey)
         }
     }
-    class Author(id: EntityID<Int>) : IntEntity(id) {
-        companion object : IntEntityClass<Author>(Authors)
 
-        var publisher by Publisher referencedOn Authors
+    class Author(id: EntityID<Int>) : Entity<Int>(id) {
+        companion object : EntityClass<Int, Author>(Authors)
+
         var penName by Authors.penName
+        var publisher by Publisher referencedOn Authors
     }
 
-    // composite id has 1 column - type Int
-    object Books : CompositeIdTable("books") {
-        val bookId = integer("book_id").autoIncrement().compositeEntityId()
-        val title = varchar("title", 32)
-        val author = reference("author", Authors)
+    private val allTables = arrayOf(Publishers, Authors)
 
-        override val primaryKey = PrimaryKey(bookId)
-    }
-    class Book(id: EntityID<CompositeID>) : CompositeEntity(id) {
-        companion object : CompositeEntityClass<Book>(Books)
+    // EXCLUDED DB:
+    // SQLite temporarily excluded because auto-increment can be applied only to a single column primary key
+    // SQL Server temporarily excluded when inserting explicit value for identity column (not allowed without mode)
 
-        var title by Books.title
-        var author by Author referencedOn Books.author
-    }
-
-    // table with no id - single column PK
-    object Reviews : Table("reviews") {
-        val reviewId = integer("review_id").uniqueIndex()
-        val bookId = reference("book_id", Books)
-        val authorId = reference("author_id", Authors)
-        val publisherId = integer("publisher_id").nullable()
-        val publisherIsbn = uuid("publisher_isbn").nullable()
-        val review = varchar("review", 128)
-
-        init {
-            foreignKey(publisherId, publisherIsbn, target = Publishers.primaryKey)
-        }
-
-        override val primaryKey = PrimaryKey(reviewId, name = "review_unique_id")
-    }
-
-    // PRIMARY KEY USE CASES
-
-    @Test
-    fun primaryKeyUseCases() {
-        withTables(excludeSettings = listOf(TestDB.SQLITE), Publishers, Authors, Books, Reviews) {
-            println(Publishers.primaryKey.name)
-            println(Publishers.primaryKey.columns)
-
-            println(Authors.primaryKey.name)
-            println(Authors.primaryKey.columns)
-
-            println(Books.primaryKey.name)
-            println(Books.primaryKey.columns)
-
-            println(Reviews.primaryKey.name)
-            println(Reviews.primaryKey.columns)
-        }
-    }
-
-    // TYPE & USE CASE TESTS
+    // ID TYPE & USE CASES
 
     @Test
     fun entityIdUseCases() {
-        withTables(excludeSettings = listOf(TestDB.SQLITE), Publishers, Authors, Books) {
+        withTables(excludeSettings = listOf(TestDB.SQLITE), tables = allTables) {
             // entities
             val publisherA: Publisher = Publisher.new {
                 name = "Publisher A"
@@ -117,71 +74,56 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
                 publisher = publisherA
                 penName = "Author A"
             }
-            val bookA: Book = Book.new {
-                title = "Book A"
-                author = authorA
-            }
 
             // entity id properties
             val publisherId: EntityID<CompositeID> = publisherA.id
             val authorId: EntityID<Int> = authorA.id
-            val bookId: EntityID<CompositeID> = bookA.id
 
-            // access wrapped entity id values - type erasure???
+            // access wrapped entity id values
             val publisherIdValue: CompositeID = publisherId.value
-            val authorIdValue: Int = authorId.value // no type erasure
-            val bookIdValue: CompositeID = bookId.value
+            val authorIdValue: Int = authorId.value
 
-            // access individual composite entity id values - type erasure
-            val publisherIdComponent1 = publisherIdValue[Publishers.pubId]
-            val publisherIdComponent2 = publisherIdValue[Publishers.isbn]
-            val bookIdComponent1 = bookIdValue[Books.bookId]
+            // access individual composite entity id values - no type erasure
+            val publisherIdComponent1: Int = publisherIdValue[Publishers.pubId]
+            val publisherIdComponent2: UUID = publisherIdValue[Publishers.isbn]
 
             // find entity by its id property - argument type EntityID<T> must match invoking type EntityClass<T, _>
             val foundPublisherA: Publisher? = Publisher.findById(publisherId)
             val foundAuthorA: Author? = Author.findById(authorId)
-            val foundBookA: Book? = Book.findById(bookId)
         }
     }
 
     @Test
     fun tableIdColumnUseCases() {
-        withTables(excludeSettings = listOf(TestDB.SQLITE), Publishers, Authors, Books) {
+        withTables(excludeSettings = listOf(TestDB.SQLITE), tables = allTables) {
             // id columns
             val publisherIdColumn: Column<EntityID<CompositeID>> = Publishers.id
             val authorIdColumn: Column<EntityID<Int>> = Authors.id
-            val bookIdColumn: Column<EntityID<CompositeID>> = Books.id
 
             // entity id values
             val publisherA: EntityID<CompositeID> = Publishers.insertAndGetId {
                 it[name] = "Publisher A"
             }
             val authorA: EntityID<Int> = Authors.insertAndGetId {
-                // cast necessary due to type erasure
-                it[publisherId] = publisherA.value[Publishers.pubId] as Int
-                it[publisherIsbn] = publisherA.value[Publishers.isbn] as UUID
+                // no cast needed as no type erasure
+                it[publisherId] = publisherA.value[Publishers.pubId]
+                it[publisherIsbn] = publisherA.value[Publishers.isbn]
                 it[penName] = "Author A"
-            }
-            val bookA: EntityID<CompositeID> = Books.insertAndGetId {
-                it[title] = "Book A"
-                it[author] = authorA.value // cast not necessary
             }
 
             // access entity id with single result row access
             val publisherResult: EntityID<CompositeID> = Publishers.selectAll().single()[Publishers.id]
             val authorResult: EntityID<Int> = Authors.selectAll().single()[Authors.id]
-            val bookResult: EntityID<CompositeID> = Books.selectAll().single()[Books.id]
 
             // add all id components to query builder with single column op - EntityID<T> == EntityID<T>
             Publishers.selectAll().where { Publishers.id eq publisherResult }.single() // deconstructs to use compound AND
             Authors.selectAll().where { Authors.id eq authorResult }.single()
-            Books.selectAll().where { Books.id eq bookResult }.single()
         }
     }
 
     @Test
     fun manualEntityIdUseCases() {
-        withTables(excludeSettings = listOf(TestDB.SQLITE, TestDB.SQLSERVER), Publishers, Authors, Books) {
+        withTables(excludeSettings = listOf(TestDB.SQLITE, TestDB.SQLSERVER), tables = allTables) {
             // manual using DSL
             val code = UUID.randomUUID()
             Publishers.insert {
@@ -190,40 +132,31 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
                 it[name] = "Publisher A"
             }
             Authors.insert {
-                it[id] = EntityID(1, Authors)
                 it[publisherId] = 725
                 it[publisherIsbn] = code
                 it[penName] = "Author A"
             }
-            Books.insert {
-                it[title] = "Book A"
-                it[author] = 1
-            }
 
             // manual using DAO
-            val publisherIdValue = CompositeID(mapOf(Publishers.pubId to 611, Publishers.isbn to UUID.randomUUID()))
+            val publisherIdValue = CompositeID {
+                it[Publishers.pubId] = 611
+                it[Publishers.isbn] = UUID.randomUUID()
+            }
             val publisherA: Publisher = Publisher.new(publisherIdValue) {
                 name = "Publisher B"
             }
-            val authorA: Author = Author.new(2) {
+            val authorA: Author = Author.new(12345) {
                 publisher = publisherA
                 penName = "Author B"
-            }
-            val bookIdValue = CompositeID(mapOf(Books.bookId to 2))
-            Book.new(bookIdValue) {
-                title = "Book B"
-                author = authorA
             }
 
             // equality check - EntityID<T> == T
             Publishers.selectAll().where { Publishers.id eq publisherIdValue }.single()
-            Authors.selectAll().where { Authors.id eq 2 }.single()
-            Books.selectAll().where { Books.id eq bookIdValue }.single()
+            Authors.selectAll().where { Authors.id eq authorA.id }.single()
 
             // find entity by its id value - argument type T must match invoking type EntityClass<T, _>
             val foundPublisherA: Publisher? = Publisher.findById(publisherIdValue)
-            val foundAuthorA: Author? = Author.findById(2)
-            val foundBookA: Book? = Book.findById(bookIdValue)
+            val foundAuthorA: Author? = Author.findById(authorA.id.value)
         }
     }
 
@@ -233,14 +166,14 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
     fun testCreateAndDropCompositeIdTable() {
         withDb(excludeSettings = listOf(TestDB.SQLITE)) {
             try {
-                addLogger(StdOutSqlLogger)
-                SchemaUtils.create(Publishers, Authors, Books)
+                SchemaUtils.create(tables = allTables)
 
                 assertTrue(Publishers.exists())
                 assertTrue(Authors.exists())
-                assertTrue(Books.exists())
+
+                assertTrue(SchemaUtils.statementsRequiredToActualizeScheme(tables = allTables).isEmpty())
             } finally {
-                SchemaUtils.drop(Authors, Publishers, Books)
+                SchemaUtils.drop(tables = allTables)
             }
         }
     }
@@ -248,21 +181,22 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
     @Test
     fun testInsertAndSelectUsingDAO() {
         withTables(excludeSettings = listOf(TestDB.SQLITE), Publishers) {
-            val p1 = Publisher.new {
+            val p1: Publisher = Publisher.new {
                 name = "Publisher A"
             }
 
-            val result1 = Publisher.all().single()
+            val result1: Publisher = Publisher.all().single()
+
             assertEquals("Publisher A", result1.name)
-            // can compare entire entities
+            // can compare entire entity objects
             assertEquals(p1, result1)
             // or entire entity ids
             assertEquals(p1.id, result1.id)
             // or the value wrapped by entity id
             assertEquals(p1.id.value, result1.id.value)
             // or the composite id components
-//            assertEquals(p1.id.value.number, result1.id.value.number)
-//            assertEquals(p1.id.value.isbn, result1.id.value.isbn)
+            assertEquals(p1.id.value[Publishers.pubId], result1.id.value[Publishers.pubId])
+            assertEquals(p1.id.value[Publishers.isbn], result1.id.value[Publishers.isbn])
 
             Publisher.new { name = "Publisher B" }
             Publisher.new { name = "Publisher C" }
@@ -279,17 +213,20 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
                 it[name] = "Publisher A"
             }
 
-            val result = Publishers.selectAll().single()
+            val result: ResultRow = Publishers.selectAll().single()
             assertEquals("Publisher A", result[Publishers.name])
 
             // test all id column components are accessible from single ResultRow access
             val idResult = result[Publishers.id]
-//            assertIs<EntityID<PubId>>(idResult)
-//            assertEquals(result[Publishers.number], idResult.value.number)
-//            assertEquals(result[Publishers.isbn], idResult.value.isbn)
+            assertIs<EntityID<CompositeID>>(idResult)
+            assertEquals(result[Publishers.pubId], idResult.value[Publishers.pubId])
+            assertEquals(result[Publishers.isbn], idResult.value[Publishers.isbn])
 
             // test that using composite id column in DSL query builder works
-            val dslQuery = Publishers.select(Publishers.id).where { Publishers.id eq idResult }.prepareSQL(this)
+            val dslQuery = Publishers
+                .select(Publishers.id) // should deconstruct to 2 columns
+                .where { Publishers.id eq idResult } // should deconstruct to 2 ops
+                .prepareSQL(this)
             val selectClause = dslQuery.substringAfter("SELECT ").substringBefore("FROM")
             // id column should deconstruct to 2 columns from PK
             assertEquals(2, selectClause.split(", ", ignoreCase = true).size)
@@ -302,19 +239,43 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
     @Test
     fun testInsertAndGetCompositeIds() {
         withTables(excludeSettings = listOf(TestDB.SQLITE, TestDB.SQLSERVER), Publishers) {
-            // no need to wrap inserted DSL value in EntityID
-            val id1 = Publishers.insertAndGetId {
+            // insert individual components
+            val id1: EntityID<CompositeID> = Publishers.insertAndGetId {
                 it[pubId] = 725
                 it[isbn] = UUID.randomUUID()
                 it[name] = "Publisher A"
             }
-//            assertEquals(725, id1.value.number)
+            assertEquals(725, id1.value[Publishers.pubId])
 
-            val id2 = Publishers.insertAndGetId {
+            // insert components as defaults
+            val id2: EntityID<CompositeID> = Publishers.insertAndGetId {
                 it[name] = "Publisher B"
             }
             val expectedNextVal = if (currentTestDB in TestDB.mySqlRelatedDB) 726 else 1
-//            assertEquals(expectedNextVal, id2.value.number)
+            assertEquals(expectedNextVal, id2.value[Publishers.pubId])
+
+            // insert as composite ID
+            // this is possible with single PK IDs - should it also be possible here?
+            val id3: EntityID<CompositeID> = Publishers.insertAndGetId {
+                it[id] = CompositeID { id ->
+                    id[pubId] = 999
+                    id[isbn] = UUID.randomUUID()
+                }
+                it[name] = "Publisher C"
+            }
+            assertEquals(999, id3.value[Publishers.pubId])
+
+            // should this also be possible?
+//            Publishers.insertAndGetId {
+//                it[id] = EntityID(
+//                    CompositeID { id ->
+//                        id[pubId] = 12345
+//                        id[isbn] = UUID.randomUUID()
+//                    },
+//                    Publishers
+//                )
+//                it[name] = "Publisher C"
+//            }
         }
     }
 
@@ -328,15 +289,18 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
                 it[name] = "Publisher A"
             }
 
-//            assertEquals(725, Publishers.selectAll().single()[Publishers.number])
+            assertEquals(725, Publishers.selectAll().single()[Publishers.pubId])
 
             // manual using DAO
-//            val fullId = PubId(611, UUID.randomUUID())
-//            val p2 = Publisher.new(fullId) {
-//                name = "Publisher B"
-//            }
-//            assertEquals(611, p2.id.value.number)
-//            assertEquals(611, Publisher.findById(p2.id)?.id?.value?.number)
+            val fullId = CompositeID {
+                it[Publishers.pubId] = 611
+                it[Publishers.isbn] = UUID.randomUUID()
+            }
+            val p2Id = Publisher.new(fullId) {
+                name = "Publisher B"
+            }.id
+            assertEquals(611, p2Id.value[Publishers.pubId])
+            assertEquals(611, Publisher.findById(p2Id)?.id?.value?.get(Publishers.pubId))
         }
     }
 
@@ -351,7 +315,7 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
 
             val p1 = Publisher.findById(id1)
             assertNotNull(p1)
-//            assertEquals(725, p1.id.value.number)
+            assertEquals(725, p1.id.value[Publishers.pubId])
 
             val id2: EntityID<CompositeID> = Publisher.new {
                 name = "Publisher B"
@@ -360,13 +324,13 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
             val p2 = Publisher.findById(id2)
             assertNotNull(p2)
             assertEquals("Publisher B", p2.name)
-//            assertEquals(id2.value.number, p2.id.value.number)
+            assertEquals(id2.value[Publishers.pubId], p2.id.value[Publishers.pubId])
 
             // test findById() using CompositeID value
-//            val compositeId1: PubId = id1.value
-//            val p3 = Publisher.findById(compositeId1)
-//            assertNotNull(p3)
-//            assertEquals(p1, p3)
+            val compositeId1: CompositeID = id1.value
+            val p3 = Publisher.findById(compositeId1)
+            assertNotNull(p3)
+            assertEquals(p1, p3)
         }
     }
 
@@ -414,32 +378,6 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
             val result = Publisher.all().single()
             assertEquals("Publisher B", result.name)
             assertEquals(p2.id, result.id)
-        }
-    }
-
-    @Test
-    fun testInsertAndSelectReferencedEntities() {
-        withTables(excludeSettings = listOf(TestDB.SQLITE), Publishers, Authors, Books) {
-            val publisherA = Publisher.new {
-                name = "Publisher A"
-            }
-            val authorA = Author.new {
-                publisher = publisherA
-                penName = "Author A"
-            }
-            val authorB = Author.new {
-                publisher = publisherA
-                penName = "Author B"
-            }
-            val bookA = Book.new {
-                title = "Book A"
-                author = authorB
-            }
-
-//            assertEquals(publisherA.id.value.number, authorA.publisher.id.value.number)
-            assertEquals(publisherA, authorA.publisher)
-            assertEquals(publisherA, authorB.publisher)
-            assertEquals(publisherA, bookA.author.publisher)
         }
     }
 }

@@ -2,7 +2,6 @@ package org.jetbrains.exposed.dao
 
 import org.jetbrains.exposed.dao.exceptions.EntityNotFoundException
 import org.jetbrains.exposed.dao.id.CompositeID
-import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.sql.*
@@ -123,7 +122,11 @@ open class Entity<ID : Comparable<ID>>(val id: EntityID<ID>) {
             val refValue = if (allReferences.size == 1) {
                 reference.getValue(o, desc)
             } else {
-                CompositeID(allReferences.keys.associateWith { it.getValue(o, desc) as Comparable<*> })
+                CompositeID {
+                    allReferences.keys.forEach { column ->
+                        it[column as Column<Comparable<Any>>] = column.getValue(o, desc)
+                    }
+                }
             }
             when {
                 refValue is EntityID<*> && reference.referee<REF>() == factory.table.id -> {
@@ -131,7 +134,9 @@ open class Entity<ID : Comparable<ID>>(val id: EntityID<ID>) {
                         storeReferenceInCache(reference, it)
                     }
                 }
-                refValue is CompositeID && allReferences.values == (factory.table as CompositeIdTable).idColumns -> {
+                refValue is CompositeID &&
+                    allReferences.values.size == factory.table.idColumns.size &&
+                    allReferences.values.containsAll(factory.table.idColumns) -> {
                     factory.findById(refValue as RID).also {
                         storeReferenceInCache(reference, it)
                     }
@@ -143,7 +148,7 @@ open class Entity<ID : Comparable<ID>>(val id: EntityID<ID>) {
                         if (allReferences.size == 1) {
                             reference.referee!!.getValue(this, desc) == refValue
                         } else {
-                            allReferences.all { it.value.getValue(this, desc) == (refValue as CompositeID)[it.key] }
+                            allReferences.all { it.value.getValue(this, desc) == (refValue as CompositeID)[it.key as Column<Comparable<Any>>] }
                         }
                     }) {
                         baseReferee eq (refValue as REF)
@@ -238,7 +243,7 @@ open class Entity<ID : Comparable<ID>>(val id: EntityID<ID>) {
     @Suppress("UNCHECKED_CAST", "USELESS_CAST")
     fun <T> Column<T>.lookup(): T = when {
         writeValues.containsKey(this as Column<out Any?>) -> writeValues[this as Column<out Any?>] as T
-        id.valueIsNotInitialized() && _readValues?.hasValue(this)?.not() ?: true -> defaultValueFun?.invoke() as T
+        id.isNotInitialized() && _readValues?.hasValue(this)?.not() ?: true -> defaultValueFun?.invoke() as T
         columnType.nullable -> readValues[this]
         else -> readValues[this]!!
     }
@@ -390,25 +395,14 @@ open class Entity<ID : Comparable<ID>>(val id: EntityID<ID>) {
      */
     @Suppress("UNCHECKED_CAST")
     internal fun writeIdColumnValue(table: IdTable<*>, value: EntityID<*>) {
-        if (table is CompositeIdTable) {
-            val compositeID = value._value as CompositeID
+        (value._value as? CompositeID)?.let { id ->
             table.idColumns.forEach { column ->
-                compositeID[column]?.let {
+                id[column as Column<Comparable<Any>>]?.let {
                     writeValues[column as Column<Any?>] = it
                 }
             }
-        } else {
+        } ?: run {
             writeValues[table.id as Column<Any?>] = value
         }
     }
-}
-
-/**
- * Returns whether an [EntityID]'s wrapped value has not been assigned an actual value other than `null`.
- * If [this] wraps a composite value, `true` is returned if any component is still assigned to `null`.
- */
-internal fun EntityID<*>.valueIsNotInitialized(): Boolean = if (table is CompositeIdTable) {
-    (_value as CompositeID).values.any { it == null }
-} else {
-    _value == null
 }

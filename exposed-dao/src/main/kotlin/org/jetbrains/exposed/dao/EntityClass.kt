@@ -1,7 +1,6 @@
 package org.jetbrains.exposed.dao
 
 import org.jetbrains.exposed.dao.exceptions.EntityNotFoundException
-import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.sql.*
@@ -117,7 +116,7 @@ abstract class EntityClass<ID : Comparable<ID>, out T : Entity<ID>>(
     }
 
     internal open fun invalidateEntityInCache(o: Entity<ID>) {
-        val entityAlreadyFlushed = !o.id.valueIsNotInitialized()
+        val entityAlreadyFlushed = !o.id.isNotInitialized()
         val sameDatabase = TransactionManager.current().db == o.db
         if (!entityAlreadyFlushed || !sameDatabase) return
 
@@ -329,10 +328,7 @@ abstract class EntityClass<ID : Comparable<ID>, out T : Entity<ID>>(
      * @sample org.jetbrains.exposed.sql.tests.h2.MultiDatabaseEntityTest.crossReferencesProhibitedForEntitiesFromDifferentDB
      */
     fun count(op: Op<Boolean>? = null): Long {
-        val countExpression = when (table) {
-            is CompositeIdTable -> table.idColumns.first().count()
-            else -> table.id.count()
-        }
+        val countExpression = table.idColumns.first().count()
         val query = table.select(countExpression).notForUpdate()
         op?.let { query.adjustWhere { op } }
         return query.first()[countExpression]
@@ -391,7 +387,7 @@ abstract class EntityClass<ID : Comparable<ID>, out T : Entity<ID>>(
         } finally {
             entityCache.finishEntityInitialization(prototype)
         }
-        if (entityId.valueIsNotInitialized()) {
+        if (entityId.isNotInitialized()) {
             val readValues = prototype._readValues!!
             val writeValues = prototype.writeValues
             table.columns.filter { col ->
@@ -436,7 +432,7 @@ abstract class EntityClass<ID : Comparable<ID>, out T : Entity<ID>>(
      */
     infix fun referencedOn(table: IdTable<*>): Reference<Comparable<Any>, ID, T> {
         val tableFK = table.foreignKeys.firstOrNull {
-            it.target == (this.table as CompositeIdTable).idColumns
+            it.target == this.table.idColumns
         } ?: error("Table $table does not hold a composite foreign key constraint matching ${this.table}'s primary key.")
         val delegate = tableFK.from.first() as Column<Comparable<Any>>
         return registerRefRule(delegate) { Reference(delegate, this, tableFK.references) }

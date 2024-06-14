@@ -2,6 +2,7 @@
 
 package org.jetbrains.exposed.sql.statements
 
+import org.jetbrains.exposed.dao.id.CompositeID
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.IdTable
 import org.jetbrains.exposed.sql.*
@@ -25,6 +26,7 @@ abstract class UpdateBuilder<out T>(type: StatementType, targets: List<Table>) :
 
     @LowPriorityInOverloadResolution
     open operator fun <S> set(column: Column<S>, value: S) {
+        // TODO Include set for Column<EntityID<CompositeID>> assigned to EntityID<CompositeID> - if suggested
         require(column.columnType.nullable || (value != null && value !is Op.NULL)) {
             "Trying to set null to not nullable column $column"
         }
@@ -36,9 +38,15 @@ abstract class UpdateBuilder<out T>(type: StatementType, targets: List<Table>) :
     @Suppress("UNCHECKED_CAST")
     @JvmName("setWithEntityIdValue")
     operator fun <S : Comparable<S>> set(column: Column<EntityID<S>>, value: S) {
-        val entityId: EntityID<S> = EntityID(value, (column.foreignKey?.targetTable ?: column.table) as IdTable<S>)
-        column.columnType.validateValueBeforeUpdate(entityId)
-        values[column] = entityId
+        if (value is CompositeID) {
+            value.values.forEach { (idColumn, idValue) ->
+                idValue?.let { set(idColumn as Column<Any>, it) }
+            }
+        } else {
+            val entityId: EntityID<S> = EntityID(value, (column.foreignKey?.targetTable ?: column.table) as IdTable<S>)
+            column.columnType.validateValueBeforeUpdate(entityId)
+            values[column] = entityId
+        }
     }
 
     @Suppress("UNCHECKED_CAST")

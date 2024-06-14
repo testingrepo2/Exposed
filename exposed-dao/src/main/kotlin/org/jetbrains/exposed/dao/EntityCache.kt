@@ -260,7 +260,7 @@ class EntityCache(private val transaction: Transaction) {
             }
 
             for ((entry, genValues) in toFlush.zip(ids)) {
-                if (entry.id.valueIsNotInitialized()) {
+                if (entry.id.isNotInitialized()) {
                     val id = genValues[table.id]
                     entry.id._value = id._value
                     entry.writeIdColumnValue(entry.klass.table, id)
