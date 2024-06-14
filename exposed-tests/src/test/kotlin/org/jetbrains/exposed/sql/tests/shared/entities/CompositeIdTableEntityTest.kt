@@ -251,7 +251,7 @@ class CompositeIdTableEntityTest : DatabaseTestsBase() {
             val id2: EntityID<CompositeID> = Publishers.insertAndGetId {
                 it[name] = "Publisher B"
             }
-            val expectedNextVal = if (currentTestDB in TestDB.mySqlRelatedDB) 726 else 1
+            val expectedNextVal = if (currentTestDB in TestDB.ALL_MYSQL_LIKE || currentTestDB == TestDB.H2_V1) 726 else 1
             assertEquals(expectedNextVal, id2.value[Publishers.pubId])
 
             // insert as composite ID

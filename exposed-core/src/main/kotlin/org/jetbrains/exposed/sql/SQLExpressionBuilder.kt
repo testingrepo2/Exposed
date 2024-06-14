@@ -2,6 +2,7 @@
 
 package org.jetbrains.exposed.sql
 
+import org.jetbrains.exposed.dao.id.CompositeID
 import org.jetbrains.exposed.dao.id.CompositeIdTable
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.EntityIDFunctionProvider
@@ -337,8 +338,12 @@ interface ISqlExpressionBuilder {
     infix fun <T : Comparable<T>, E : EntityID<T>?, V : T?> ExpressionWithColumnType<E>.eq(t: V): Op<Boolean> {
         if (t == null) return isNull()
 
-        val table = (columnType as EntityIDColumnType<*>).idColumn.table as IdTable<T>
-        return table.mapIdComparison(EntityID(t, table), ::EqOp)
+        val table = (columnType as EntityIDColumnType<*>).idColumn.table
+        return if (table is CompositeIdTable) {
+            table.mapIdComparison(EntityID(t as CompositeID, table), ::EqOp)
+        } else {
+            EqOp(this, wrap(EntityID(t, table as IdTable<T>)))
+        }
     }
 
     /** Checks if this [EntityID] expression is equal to some [other] expression. */
@@ -360,7 +365,7 @@ interface ISqlExpressionBuilder {
     @LowPriorityInOverloadResolution
     infix fun <T> ExpressionWithColumnType<T>.neq(other: T): Op<Boolean> = when {
         other == null -> isNotNull()
-        (columnType as? EntityIDColumnType<*>)?.idColumn?.table is IdTable<*> -> {
+        (columnType as? EntityIDColumnType<*>)?.idColumn?.table is CompositeIdTable -> {
             val table = (columnType as EntityIDColumnType<*>).idColumn.table as CompositeIdTable
             table.mapIdComparison(other, ::NeqOp)
         }
@@ -378,8 +383,12 @@ interface ISqlExpressionBuilder {
     infix fun <T : Comparable<T>, E : EntityID<T>?, V : T?> ExpressionWithColumnType<E>.neq(t: V): Op<Boolean> {
         if (t == null) return isNotNull()
 
-        val table = (columnType as EntityIDColumnType<*>).idColumn.table as IdTable<T>
-        return table.mapIdComparison(EntityID(t, table), ::NeqOp)
+        val table = (columnType as EntityIDColumnType<*>).idColumn.table
+        return if (table is CompositeIdTable) {
+            table.mapIdComparison(EntityID(t as CompositeID, table), ::NeqOp)
+        } else {
+            NeqOp(this, wrap(EntityID(t, table as IdTable<T>)))
+        }
     }
 
     /** Checks if this [EntityID] expression is not equal to some [other] expression. */
