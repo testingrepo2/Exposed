@@ -6,6 +6,7 @@ import org.jetbrains.exposed.dao.flushCache
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.IntIdTable
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.functions.math.AbsFunction
 import org.jetbrains.exposed.sql.jodatime.*
 import org.jetbrains.exposed.sql.statements.BatchDataInconsistentException
 import org.jetbrains.exposed.sql.statements.BatchInsertStatement
@@ -224,17 +225,11 @@ class JodaTimeDefaultsTest : DatabaseTestsBase() {
 
     @Test
     fun testDefaultExpressions01() {
-        fun abs(value: Int) = object : ExpressionWithColumnType<Int>() {
-            override fun toQueryBuilder(queryBuilder: QueryBuilder) = queryBuilder { append("ABS($value)") }
-
-            override val columnType: IColumnType<Int> = IntegerColumnType()
-        }
-
         val foo = object : IntIdTable("foo") {
             val name = text("name")
             val defaultDateTime = datetime("defaultDateTime").defaultExpression(CurrentDateTime)
             val defaultDate = date("defaultDate").defaultExpression(CurrentDate)
-            val defaultInt = integer("defaultInteger").defaultExpression(abs(-100))
+            val defaultInt = integer("defaultInteger").defaultExpression(AbsFunction(intLiteral(-100)))
         }
 
         withTables(foo) {
@@ -428,15 +423,26 @@ class JodaTimeDefaultsTest : DatabaseTestsBase() {
     fun testConsistentSchemeWithFunctionAsDefaultExpression() {
         val foo = object : IntIdTable("foo") {
             val name = text("name")
+            val defaultDate = date("default_date").defaultExpression(CurrentDate)
             val defaultDateTime = datetime("defaultDateTime").defaultExpression(CurrentDateTime)
         }
 
-        withDb {
+        withDb { testDb ->
             try {
                 SchemaUtils.create(foo)
 
                 val actual = SchemaUtils.statementsRequiredToActualizeScheme(foo)
-                assertTrue(actual.isEmpty())
+
+                if (testDb == TestDB.MYSQL_V5) {
+                    // MySQL 5 does not support CURRENT_DATE as default
+                    // so the column is created with a NULL marker, which correctly triggers 1 alter statement
+                    val tableName = foo.nameInDatabaseCase()
+                    val dateColumnName = foo.defaultDate.nameInDatabaseCase()
+                    val alter = "ALTER TABLE $tableName MODIFY COLUMN $dateColumnName DATE NULL"
+                    assertEquals(alter, actual.single())
+                } else {
+                    assertTrue(actual.isEmpty())
+                }
             } finally {
                 SchemaUtils.drop(foo)
             }

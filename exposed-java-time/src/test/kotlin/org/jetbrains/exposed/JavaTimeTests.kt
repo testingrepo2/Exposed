@@ -9,6 +9,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.dao.id.IntIdTable
+import org.jetbrains.exposed.dao.id.LongIdTable
 import org.jetbrains.exposed.exceptions.UnsupportedByDialectException
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.between
@@ -565,6 +566,20 @@ class JavaTimeTests : DatabaseTestsBase() {
             }.single()
             assertEqualDateTime(datesInput.last(), result2[lastDate])
             assertEqualLists(result2[firstTwoDatetimes], datetimeInput.take(2))
+        }
+    }
+
+    @Test
+    fun testCurrentDateAsDefaultExpression() {
+        val testTable = object : LongIdTable("test_table") {
+            val date: Column<LocalDate> = date("date").index().defaultExpression(CurrentDate)
+        }
+        // MySQL 5 is excluded because since it's not possible to set the default to CurrentDate, it's set to null and
+        // it's not possible to determine whether the default value of a nullable column was not defined or it was
+        // explicitly set to null, which results in the false generation of an ALTER statement.
+        withTables(excludeSettings = listOf(TestDB.MYSQL_V5), testTable) {
+            val statements = SchemaUtils.statementsRequiredForDatabaseMigration(testTable)
+            assertTrue(statements.isEmpty())
         }
     }
 }

@@ -7,6 +7,7 @@ import org.jetbrains.exposed.dao.flushCache
 import org.jetbrains.exposed.dao.id.EntityID
 import org.jetbrains.exposed.dao.id.IntIdTable
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.functions.math.AbsFunction
 import org.jetbrains.exposed.sql.statements.BatchDataInconsistentException
 import org.jetbrains.exposed.sql.statements.BatchInsertStatement
 import org.jetbrains.exposed.sql.tests.DatabaseTestsBase
@@ -290,17 +291,11 @@ class DefaultsTest : DatabaseTestsBase() {
 
     @Test
     fun testDefaultExpressions01() {
-        fun abs(value: Int) = object : ExpressionWithColumnType<Int>() {
-            override fun toQueryBuilder(queryBuilder: QueryBuilder) = queryBuilder { append("ABS($value)") }
-
-            override val columnType: IColumnType<Int> = IntegerColumnType()
-        }
-
         val foo = object : IntIdTable("foo") {
             val name = text("name")
             val defaultDateTime = datetime("defaultDateTime").defaultExpression(CurrentDateTime)
             val defaultDate = date("defaultDate").defaultExpression(CurrentDate)
-            val defaultInt = integer("defaultInteger").defaultExpression(abs(-100))
+            val defaultInt = integer("defaultInteger").defaultExpression(AbsFunction(intLiteral(-100)))
         }
 
         withTables(foo) {
@@ -377,14 +372,14 @@ class DefaultsTest : DatabaseTestsBase() {
             val defaultTimeStamp = timestamp("default_time_stamp").defaultExpression(CurrentTimestamp)
         }
 
-        withDb {
+        withDb { testDb ->
             try {
                 SchemaUtils.create(foo)
 
                 val actual = SchemaUtils.statementsRequiredToActualizeScheme(foo)
 
-                if (currentDialectTest is MysqlDialect) {
-                    // MySQL and MariaDB do not support CURRENT_DATE as default
+                if (testDb == TestDB.MYSQL_V5) {
+                    // MySQL 5 does not support CURRENT_DATE as default
                     // so the column is created with a NULL marker, which correctly triggers 1 alter statement
                     val tableName = foo.nameInDatabaseCase()
                     val dateColumnName = foo.defaultDate.nameInDatabaseCase()

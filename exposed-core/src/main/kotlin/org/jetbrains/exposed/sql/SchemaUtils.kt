@@ -252,10 +252,17 @@ object SchemaUtils {
 
             is Function<*> -> {
                 var processed = processForDefaultValue(exp)
-                if (exp.columnType is IDateColumnType && (processed.startsWith("CURRENT_TIMESTAMP") || processed == "GETDATE()")) {
-                    when (currentDialect) {
-                        is SQLServerDialect -> processed = "getdate"
-                        is MariaDBDialect -> processed = processed.lowercase()
+                if (exp.columnType is IDateColumnType) {
+                    if (processed.startsWith("CURRENT_TIMESTAMP") || processed == "GETDATE()") {
+                        when (currentDialect) {
+                            is SQLServerDialect -> processed = "getdate"
+                            is MariaDBDialect -> processed = processed.lowercase()
+                        }
+                    }
+                    if (processed.trim('(').startsWith("CURRENT_DATE")) {
+                        when (currentDialect) {
+                            is MysqlDialect -> processed = "curdate()"
+                        }
                     }
                 }
                 processed
@@ -316,9 +323,11 @@ object SchemaUtils {
                     val incorrectNullability = existingCol.nullable != columnType.nullable
                     // Exposed doesn't support changing sequences on columns
                     val incorrectAutoInc = existingCol.autoIncrement != columnType.isAutoInc && col.autoIncColumnType?.autoincSeq == null
-                    val incorrectDefaults = existingCol.defaultDbValue != col.dbDefaultValue?.let {
+                    val existingColDefault = existingCol.defaultDbValue
+                    val colDefault = col.dbDefaultValue?.takeIf { currentDialect.isAllowedAsColumnDefault(it) }?.let {
                         dataTypeProvider.dbDefaultToString(col, it)
                     }
+                    val incorrectDefaults = existingColDefault != colDefault
                     val incorrectCaseSensitiveName = existingCol.name.inProperCase() != col.nameUnquoted().inProperCase()
                     ColumnDiff(incorrectNullability, incorrectAutoInc, incorrectDefaults, incorrectCaseSensitiveName)
                 }.filterValues { it.hasDifferences() }

@@ -148,7 +148,7 @@ abstract class DataTypeProvider {
         }
 
         e is LiteralOp<*> -> (e.columnType as IColumnType<Any?>).valueAsDefaultString(e.value)
-        e is Function<*> -> "$e"
+        e is Function<*> -> if (currentDialect is SQLiteDialect) "($e)" else "$e"
         currentDialect is MysqlDialect -> "$e"
         currentDialect is SQLServerDialect -> "$e"
         else -> "($e)"
