@@ -153,7 +153,7 @@ dependencies {
 }
 ```
 
-#### Gradle Kotlin DSL
+#### Gradle Kotlin DSL 
 
 In `build.gradle.kts`:
 
